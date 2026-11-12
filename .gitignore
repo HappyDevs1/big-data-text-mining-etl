@@ -1,0 +1,10 @@
+.DS_Store
+.Rhistory
+.RData
+.Rproj.user/
+*_cache/
+*_files/
+q1-mapreduce/target/
+q1-mapreduce/hdfs-data/
+*.log
+~$*

@@ -1,0 +1,64 @@
+Ithaca Technologies – empowering EMS teams across South Africa
+
+Ithaca Technologies is a South African software company built for emergency medical services.
+
+Rather than adapting a generic operations platform to fit EMS, we built our ODIN ERP software around the regulatory and operational reality that providers already work with.
+
+Click here to learn more about Ithaca Technologies.
+Johan Langerman, our CEO, spent years as a consultant before starting the company.
+
+Across different industries and different clients, he kept encountering the same underlying problem: Systems were out of sync with each other and operating in silos.
+
+This caused data and operational friction within the organisation.
+
+There was a disconnect between business processes and system processes. Employee data here, invoices there, spreadsheets galore.
+
+“What’s the point of having systems if they are not working for you?”
+
+A clear vision
+When Anita Deyes, who has spent more than 15 years in the industry and is the EMS Manager at SLA Paramedics, described the same pattern from inside an EMS, it gave that general problem a specific, urgent shape.
+
+Anita joined Ithaca as a director and has been our pilot partner since the company’s founding, testing early versions of the software inside of a live environment.
+
+Karien Naude, also a director, brings more than 25 years of experience in emergency care to the table.
+
+Most of it was spent at various EMS companies, until she founded UREMS, a non-profit Emergency medical service provider, focused on treating uninsured patients at no cost to them.
+
+This means the ODIN ERP platform’s development draws on more than one kind of EMS organisation rather than a single operating model.
+
+Click here to learn more about ODIN ERP.
+Development decisions are checked against this operational experience first: whether something holds up on an actual shift, with real patients and real time constraints, before it’s considered finished.
+
+The power of ODIN ERP
+EMS providers in South Africa still run much of their operation on paper, or track it across a dozen spreadsheets that were never designed to interact with each other.
+
+Both approaches work, until something needs to be done with the information beyond capturing it.
+
+Pulling a trend out of six months of handwritten patient report forms is slow.
+
+A spreadsheet tracking certifications or vehicle maintenance breaks down the same way, no version control, no audit trail, and no way to know if the copy someone is working from is actually current.
+
+Reconstructing what happened on a specific call, months later, is harder still if a form has gone missing or the handwriting can’t be read.
+
+Compliance gaps and certification lapses tend to surface only when a problem occurs, not before.
+
+Medical aid claims stall when the documentation behind them doesn’t meet what the medical aid requires.
+
+None of this is unique. It’s a structural consequence of running clinical, compliance, and operational records as separate, disconnected systems, whether that separation is paper, spreadsheets, or both.
+
+Electronic health records are the future
+As the National Health Insurance progresses, electronic health records are likely to become a requirement for EMS rather than a choice.
+
+Providers who move off of paper and spreadsheets now do so on their own timeline.
+
+Providers who wait will have to make the same move later, on a timeline set by someone else.
+
+This isn’t a SA only shift.
+
+The African Union has its own continent-wide digital health strategy, and South Africa’s National Digital Health Strategy points in the same direction: toward records that can move between systems, not paper or spreadsheets that stop at one provider’s front door.
+
+A provider that can produce clean, structured data on request can plug into whatever requirement comes next.
+
+A provider still running on paper or spreadsheets can’t do that without rebuilding years of records into a usable format first, and that only gets harder the longer it’s put off.
+
+We built ODIN as a direct response to this, grounded in the same regulatory framework the company was built around from the start: a single platform for patient records, compliance, and operations, rather than the siloed systems it was meant to replace.
