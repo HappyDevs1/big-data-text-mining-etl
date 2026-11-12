@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#37474F"/>
+    </marker>
+    <style>
+      .title { font-size: 24px; font-weight: bold; fill: #102A43; }
+      .stage { font-size: 15px; font-weight: bold; fill: #102A43; }
+      .label { font-size: 13px; fill: #243B53; }
+      .small { font-size: 11.5px; fill: #334E68; }
+      .mono  { font-size: 11.5px; fill: #243B53; font-family: Menlo, Consolas, monospace; }
+      .line  { stroke: #37474F; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+      .dash  { stroke: #8D6E63; stroke-width: 1.4; fill: none; stroke-dasharray: 6 4; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="760" fill="#FFFFFF"/>
+  <text x="600" y="38" text-anchor="middle" class="title">MapReduce keyword location search: logical layout</text>
+
+  <!-- Stage headers -->
+  <g class="stage" text-anchor="middle">
+    <text x="105" y="88">1. Input (HDFS)</text>
+    <text x="305" y="88">2. Splits</text>
+    <text x="515" y="88">3. Map</text>
+    <text x="745" y="88">4. Shuffle and sort</text>
+    <text x="945" y="88">5. Reduce</text>
+    <text x="1110" y="88">6. Output</text>
+  </g>
+
+  <!-- Driver / configuration -->
+  <rect x="285" y="620" width="620" height="110" rx="10" fill="#FFF8E1" stroke="#8D6E63" stroke-width="1.5"/>
+  <text x="595" y="645" text-anchor="middle" class="stage">Driver and job configuration (KeywordSearchDriver)</text>
+  <text x="305" y="670" class="label">Keyword typed at run time: 3rd argument, -D search.keyword=africa, or console prompt</text>
+  <text x="305" y="690" class="label">Stored in the job Configuration and sent to every mapper (search.keyword, search.wholeword)</text>
+  <text x="305" y="710" class="label">Sets LineNumberInputFormat, Mapper, Reducer, Text key and value types, 1 reduce task</text>
+
+  <!-- Input docs -->
+  <g>
+    <rect x="30" y="110" width="150" height="490" rx="10" fill="#E3F2FD" stroke="#1E88E5" stroke-width="1.5"/>
+    <text x="105" y="135" text-anchor="middle" class="label">map_reduce_test_docs</text>
+    <g class="mono">
+      <rect x="50" y="150" width="110" height="34" rx="4" fill="#fff" stroke="#90CAF9"/><text x="105" y="172" text-anchor="middle">doc1.txt</text>
+      <rect x="50" y="200" width="110" height="34" rx="4" fill="#fff" stroke="#90CAF9"/><text x="105" y="222" text-anchor="middle">doc2.txt</text>
+      <rect x="50" y="250" width="110" height="34" rx="4" fill="#fff" stroke="#90CAF9"/><text x="105" y="272" text-anchor="middle">doc3.txt</text>
+      <text x="105" y="320" text-anchor="middle">...</text>
+      <rect x="50" y="350" width="110" height="34" rx="4" fill="#fff" stroke="#90CAF9"/><text x="105" y="372" text-anchor="middle">doc7.txt</text>
+    </g>
+    <text x="105" y="430" text-anchor="middle" class="small">Plain text news</text>
+    <text x="105" y="447" text-anchor="middle" class="small">documents stored</text>
+    <text x="105" y="464" text-anchor="middle" class="small">as HDFS blocks</text>
+  </g>
+
+  <!-- Splits -->
+  <rect x="220" y="110" width="170" height="490" rx="10" fill="#EDE7F6" stroke="#5E35B1" stroke-width="1.5"/>
+  <text x="305" y="135" text-anchor="middle" class="label">LineNumberInputFormat</text>
+  <g class="small" text-anchor="middle">
+    <text x="305" y="170">isSplitable = false</text>
+    <text x="305" y="188">one split per document</text>
+    <text x="305" y="220">RecordReader turns</text>
+    <text x="305" y="238">byte offsets into</text>
+    <text x="305" y="256">1 based row numbers</text>
+  </g>
+  <rect x="235" y="290" width="140" height="70" rx="6" fill="#fff" stroke="#B39DDB"/>
+  <text x="305" y="312" text-anchor="middle" class="small">record =</text>
+  <text x="305" y="332" text-anchor="middle" class="mono">(row, line text)</text>
+  <text x="305" y="350" text-anchor="middle" class="mono">(3, "South Afr..")</text>
+
+  <!-- Mappers -->
+  <rect x="425" y="110" width="180" height="490" rx="10" fill="#E8F5E9" stroke="#43A047" stroke-width="1.5"/>
+  <g>
+    <rect x="440" y="150" width="150" height="34" rx="4" fill="#fff" stroke="#A5D6A7"/><text x="515" y="172" text-anchor="middle" class="label">Mapper 1 (doc1)</text>
+    <rect x="440" y="200" width="150" height="34" rx="4" fill="#fff" stroke="#A5D6A7"/><text x="515" y="222" text-anchor="middle" class="label">Mapper 2 (doc2)</text>
+    <rect x="440" y="250" width="150" height="34" rx="4" fill="#fff" stroke="#A5D6A7"/><text x="515" y="272" text-anchor="middle" class="label">Mapper 3 (doc3)</text>
+    <text x="515" y="320" text-anchor="middle" class="label">...</text>
+    <rect x="440" y="350" width="150" height="34" rx="4" fill="#fff" stroke="#A5D6A7"/><text x="515" y="372" text-anchor="middle" class="label">Mapper 7 (doc7)</text>
+  </g>
+  <g class="small" text-anchor="middle">
+    <text x="515" y="415">regex, case insensitive,</text>
+    <text x="515" y="432">whole word match</text>
+    <text x="515" y="458">emits per hit:</text>
+  </g>
+  <text x="515" y="478" text-anchor="middle" class="mono">(doc3.txt, "3,7")</text>
+  <text x="515" y="498" text-anchor="middle" class="mono">(doc3.txt, "5,7")</text>
+  <text x="515" y="524" text-anchor="middle" class="small">no hit in a document:</text>
+  <text x="515" y="544" text-anchor="middle" class="mono">(doc4.txt, "NONE")</text>
+
+  <!-- Shuffle -->
+  <rect x="640" y="110" width="210" height="490" rx="10" fill="#FFF3E0" stroke="#FB8C00" stroke-width="1.5"/>
+  <g class="small" text-anchor="middle">
+    <text x="745" y="140">partition by key</text>
+    <text x="745" y="158">(document name)</text>
+    <text x="745" y="176">sort and group values</text>
+  </g>
+  <g class="mono">
+    <rect x="655" y="200" width="180" height="58" rx="4" fill="#fff" stroke="#FFCC80"/>
+    <text x="665" y="222">doc1.txt -&gt;</text><text x="665" y="242">  ["1,64"]</text>
+    <rect x="655" y="270" width="180" height="58" rx="4" fill="#fff" stroke="#FFCC80"/>
+    <text x="665" y="292">doc3.txt -&gt;</text><text x="665" y="312">  ["1,38","3,7",...]</text>
+    <rect x="655" y="340" width="180" height="58" rx="4" fill="#fff" stroke="#FFCC80"/>
+    <text x="665" y="362">doc4.txt -&gt;</text><text x="665" y="382">  ["NONE"]</text>
+  </g>
+
+  <!-- Reducer -->
+  <rect x="885" y="110" width="120" height="490" rx="10" fill="#FCE4EC" stroke="#D81B60" stroke-width="1.5"/>
+  <text x="945" y="150" text-anchor="middle" class="label">Reducer</text>
+  <g class="small" text-anchor="middle">
+    <text x="945" y="190">drop NONE</text>
+    <text x="945" y="215">sort by row,</text>
+    <text x="945" y="232">then column</text>
+    <text x="945" y="257">count matches</text>
+    <text x="945" y="282">format</text>
+    <text x="945" y="299">(row,col) list</text>
+  </g>
+
+  <!-- Output -->
+  <rect x="1035" y="110" width="150" height="490" rx="10" fill="#E0F2F1" stroke="#00897B" stroke-width="1.5"/>
+  <text x="1110" y="140" text-anchor="middle" class="mono">part-r-00000</text>
+  <g class="mono">
+    <text x="1045" y="180">doc1.txt</text><text x="1045" y="196">matches=1</text><text x="1045" y="212">(1,64)</text>
+    <text x="1045" y="250">doc3.txt</text><text x="1045" y="266">matches=8</text><text x="1045" y="282">(1,38) (3,7)</text><text x="1045" y="298">(5,7) ...</text>
+    <text x="1045" y="336">doc4.txt</text><text x="1045" y="352">matches=0</text><text x="1045" y="368">not found</text>
+  </g>
+
+  <!-- Flow arrows -->
+  <path d="M180,355 L218,355" class="line"/>
+  <path d="M390,355 L423,355" class="line"/>
+  <path d="M605,355 L638,355" class="line"/>
+  <path d="M850,355 L883,355" class="line"/>
+  <path d="M1005,355 L1033,355" class="line"/>
+
+  <!-- Config arrows -->
+  <path d="M515,620 L515,603" class="dash"/>
+  <path d="M780,620 L930,603" class="dash"/>
+  <text x="532" y="614" class="small" fill="#8D6E63">keyword</text>
+</svg>
