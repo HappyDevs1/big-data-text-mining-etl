@@ -12,7 +12,7 @@ public class KeywordMatcherTest {
     @Test
     public void matchesIgnoringCase() {
         KeywordMatcher m = new KeywordMatcher("africa", true);
-        assertEquals(Arrays.asList(7, 21), m.findColumns("South Africa and AFRICA"));
+        assertEquals(Arrays.asList(7, 18), m.findColumns("South Africa and AFRICA"));
     }
 
     @Test
@@ -30,6 +30,6 @@ public class KeywordMatcherTest {
     @Test
     public void punctuationCountsAsWordBoundary() {
         KeywordMatcher m = new KeywordMatcher("Africa", true);
-        assertEquals(Arrays.asList(4, 13), m.findColumns("in Africa's (Africa)"));
+        assertEquals(Arrays.asList(4, 14), m.findColumns("in Africa's (Africa)"));
     }
 }
