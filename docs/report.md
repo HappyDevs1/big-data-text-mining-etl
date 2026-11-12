@@ -6,7 +6,7 @@ date: "12 November 2026"
 
 # Project overview
 
-This report answers the four questions of Project 2. Every answer comes with working code that was run on the datasets provided or on data scraped for this project. The full project, including the datasets, the Java MapReduce project, the R Markdown notebooks and their rendered HTML output, is in the private GitHub repository **https://github.com/HappyDevs1/map-reduce-web-scraper**.
+This report answers the four questions of Project 2. Every answer comes with working code that was run on the datasets provided or on data scraped for this project. The full project, including the datasets, the Java MapReduce project, the R Markdown notebooks and their rendered HTML output, is in the private GitHub repository **https://github.com/HappyDevs1/big-data-text-mining-etl**.
 
 | Question | Folder | Main files |
 |---|---|---|
@@ -1382,7 +1382,7 @@ ORDER BY value_rank;
 
 ## 4.4 GitHub repository
 
-The private repository **https://github.com/HappyDevs1/map-reduce-web-scraper** contains:
+The private repository **https://github.com/HappyDevs1/big-data-text-mining-etl** contains:
 
 * **Documentation:** the root `README.md` (structure and how to run everything), a README per question folder, and this report (`docs/ITBDA4-14_Project2_Report.docx`, built from `docs/report_template.md` by `docs/build_report.py`).
 * **Datasets:** `data/raw/` (the two zips from the brief, the Wikipedia snapshot, the cached book pages and the raw scraped CSV), `data/extracted/` (unzipped documents) and `data/processed/` (cleaned outputs of Questions 2, 3 and 4).
