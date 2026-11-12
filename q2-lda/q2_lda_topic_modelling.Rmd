@@ -1,0 +1,328 @@
+---
+title: "Question 2: Topic Modelling of South African News with LDA"
+author: "Happy Mahlangu"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: false
+    df_print: kable
+params:
+  n_topics: 4
+  top_k: 10
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 9, fig.height = 6, dpi = 110, fig.path = "figures/")
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(readr)
+library(tidytext)
+library(tm)
+library(textstem)
+library(topicmodels)
+library(ggplot2)
+library(wordcloud)
+library(RColorBrewer)
+set.seed(2026)
+```
+
+The number of topics (`n_topics`) and words per topic (`top_k`) are notebook parameters, so they can be changed without editing the code, for example `rmarkdown::render("q2_lda_topic_modelling.Rmd", params = list(n_topics = 5, top_k = 8))`.
+
+# 2.1 Building the data frame and denoising the text
+
+## Loading the news files
+
+Every `.txt` file in `news.zip` becomes one row. Column 1 holds the file name and column 2 holds the full article.
+
+```{r load}
+news_dir <- "../data/extracted/sa_news"
+if (!dir.exists(news_dir)) {
+  unzip("../data/raw/news.zip", exdir = "../data/extracted")
+}
+
+files <- list.files(news_dir, pattern = "\\.txt$", full.names = TRUE)
+files <- files[order(as.integer(str_extract(basename(files), "\\d+")))]
+
+news_df <- data.frame(
+  file_name = basename(files),
+  content   = vapply(files, function(f) paste(readLines(f, encoding = "UTF-8", warn = FALSE),
+                                              collapse = "\n"), character(1)),
+  stringsAsFactors = FALSE,
+  row.names = NULL
+)
+
+str(news_df)
+news_df %>%
+  mutate(content = paste0(str_sub(str_squish(content), 1, 110), "...")) %>%
+  knitr::kable(caption = "Raw data frame, first 110 characters of each article")
+```
+
+## What the noise looks like
+
+Before cleaning it helps to measure what is in the raw text that is not useful for topic modelling.
+
+```{r noise_profile}
+noise <- news_df %>%
+  transmute(
+    file_name,
+    characters        = nchar(content),
+    blank_or_padded_lines = str_count(content, "\n[ \t]*\n|[ \t]+\n"),
+    date_lines        = str_count(content, "(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), \\w+ \\d{1,2}, \\d{4}"),
+    numbers           = str_count(content, "\\d+"),
+    curly_quotes      = str_count(content, "[\\u2018\\u2019\\u201C\\u201D]"),
+    non_ascii         = str_count(content, "[^\\x01-\\x7F]")
+  )
+noise
+```
+
+## Denoising steps
+
+| Step | Technique | Why |
+|---|---|---|
+| 1 | Normalise line endings, non breaking spaces and curly quotes | Removes encoding noise so the same word is not split into variants |
+| 2 | Remove the dateline (for example "Tuesday, July 9, 2024") | Publication dates repeat in every file and say nothing about the topic |
+| 3 | Lower case and join "South Africa" into one token | "Eskom" and "eskom" should be one term, and the country name should not split into "south" and "africa" |
+| 4 | Remove URLs, numbers, currency amounts and punctuation | Amounts like R30 000 and bracket text add sparse, meaningless terms |
+| 5 | Remove English stop words plus news specific filler (said, also, will, says) | These words appear in every article and drown out topic words |
+| 6 | Lemmatise | "governments" and "government" become the same term |
+| 7 | Drop tokens shorter than 3 letters and collapse whitespace | Removes leftovers such as "s" from possessives |
+
+```{r clean}
+custom_stop <- c("said", "says", "say", "also", "will", "can", "one", "two", "three", "make",
+                 "mr", "ms", "per", "cent", "including", "according", "however",
+                 "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+                 "sunday", "january", "february", "march", "april", "may", "june",
+                 "july", "august", "september", "october", "november", "december")
+all_stop <- unique(c(stopwords("en"), stopwords("SMART"), custom_stop))
+
+clean_text <- function(x) {
+  x %>%
+    str_replace_all("\r\n?", "\n") %>%                                   # 1
+    str_replace_all("[\\u00A0\\u2009\\u202F]", " ") %>%
+    str_replace_all("[\\u2018\\u2019]", "'") %>%
+    str_replace_all("[\\u201C\\u201D]", "\"") %>%
+    str_replace_all("[\\u2010-\\u2015]", " ") %>%
+    str_remove_all("(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), \\w+ \\d{1,2}, \\d{4}") %>%  # 2
+    str_to_lower() %>%                                                   # 3
+    str_replace_all("south africa(n|ns)?", "south_africa") %>%
+    str_remove_all("https?://\\S+|www\\.\\S+") %>%                      # 4
+    str_replace_all("'s\\b", " ") %>%
+    str_replace_all("[^a-z_\\s]", " ") %>%
+    str_squish()
+}
+
+tokens <- news_df %>%
+  mutate(clean = clean_text(content)) %>%
+  select(file_name, clean) %>%
+  unnest_tokens(word, clean) %>%
+  filter(!word %in% all_stop) %>%                                        # 5
+  mutate(word = lemmatize_words(word)) %>%                               # 6
+  filter(!word %in% all_stop, nchar(word) >= 3)                          # 7
+
+news_df <- news_df %>%
+  left_join(tokens %>% group_by(file_name) %>%
+              summarise(clean_content = paste(word, collapse = " ")),
+            by = "file_name")
+
+news_df %>%
+  transmute(file_name,
+            raw_words   = str_count(content, "\\S+"),
+            clean_words = str_count(clean_content, "\\S+"),
+            removed_pct = round(100 * (1 - clean_words / raw_words), 1),
+            clean_preview = paste0(str_sub(clean_content, 1, 80), "..."))
+
+dir.create("../data/processed", showWarnings = FALSE)
+write_csv(news_df, "../data/processed/news_clean.csv")
+```
+
+# 2.2 Latent Dirichlet Allocation
+
+## Document term matrix
+
+```{r dtm}
+dtm <- tokens %>%
+  count(file_name, word) %>%
+  cast_dtm(file_name, word, n)
+dtm
+```
+
+## Choosing the number of topics
+
+LDA needs the number of topics up front. Models with 2 to 8 topics are fitted and compared on perplexity (lower means the model explains the words better). Perplexity measured on the same documents always falls as k grows, so the useful signal is the elbow, the point after which extra topics stop buying much improvement. With only 10 short articles, a small k also keeps each topic backed by more than one document. The notebook then uses `params$n_topics`.
+
+```{r choose_k, fig.height = 4}
+k_grid <- 2:8
+perp <- sapply(k_grid, function(k) {
+  m <- LDA(dtm, k = k, method = "Gibbs", control = list(seed = 2026, iter = 1000, burnin = 200))
+  perplexity(m, newdata = dtm, estimate_theta = FALSE)
+})
+ggplot(data.frame(k = k_grid, perplexity = perp), aes(k, perplexity)) +
+  geom_line(colour = "grey40") + geom_point(size = 3, colour = "#2C7FB8") +
+  geom_vline(xintercept = params$n_topics, linetype = "dashed", colour = "firebrick") +
+  labs(title = "Perplexity of LDA models by number of topics",
+       subtitle = "Dashed line marks the number of topics used in this notebook",
+       x = "Number of topics (k)", y = "Perplexity") +
+  theme_minimal()
+```
+
+## Fitting the model
+
+```{r lda}
+lda_model <- LDA(dtm, k = params$n_topics, method = "Gibbs",
+                 control = list(seed = 2026, iter = 2000, burnin = 500, alpha = 0.1))
+
+beta  <- tidy(lda_model, matrix = "beta")    # word distribution per topic
+gamma <- tidy(lda_model, matrix = "gamma")   # topic distribution per document
+```
+
+## Top topics
+
+Topics are ranked by prevalence, the average share of each topic across all documents. A short label is built from each topic's three strongest words.
+
+```{r top_topics}
+top_terms <- beta %>%
+  group_by(topic) %>%
+  slice_max(beta, n = params$top_k, with_ties = FALSE) %>%
+  arrange(topic, desc(beta)) %>%
+  ungroup()
+
+topic_labels <- top_terms %>%
+  group_by(topic) %>%
+  summarise(label = paste(head(term, 3), collapse = " / "))
+
+topic_rank <- gamma %>%
+  group_by(topic) %>%
+  summarise(prevalence = mean(gamma)) %>%
+  left_join(topic_labels, by = "topic") %>%
+  arrange(desc(prevalence)) %>%
+  mutate(rank = row_number(), prevalence = round(prevalence, 3))
+topic_rank
+```
+
+## Top k words per topic with their word distribution
+
+`beta` is the probability of a word given the topic. The cumulative column shows how much of the topic's probability mass the top words cover.
+
+```{r top_words_table}
+top_terms %>%
+  group_by(topic) %>%
+  mutate(beta = round(beta, 4),
+         cumulative = round(cumsum(beta), 3),
+         rank = row_number()) %>%
+  ungroup() %>%
+  select(topic, rank, term, beta, cumulative) %>%
+  knitr::kable(caption = paste("Top", params$top_k, "words per topic and their probability"))
+```
+
+A wide view makes the topics easier to compare side by side:
+
+```{r wide}
+top_terms %>%
+  group_by(topic) %>%
+  mutate(rank = row_number(),
+         word = paste0(term, " (", sprintf("%.3f", beta), ")")) %>%
+  ungroup() %>%
+  select(rank, topic, word) %>%
+  pivot_wider(names_from = topic, values_from = word, names_prefix = "Topic ")
+```
+
+## Topic distribution per document
+
+```{r gamma_table}
+doc_topics <- gamma %>%
+  mutate(gamma = round(gamma, 3)) %>%
+  pivot_wider(names_from = topic, values_from = gamma, names_prefix = "T") %>%
+  left_join(gamma %>% group_by(document) %>% slice_max(gamma, n = 1, with_ties = FALSE) %>%
+              select(document, dominant_topic = topic), by = "document") %>%
+  left_join(news_df %>% transmute(document = file_name,
+                                  headline = str_trim(str_extract(content, "^[^\r\n]+"))),
+            by = "document") %>%
+  arrange(dominant_topic, document)
+doc_topics
+```
+
+## Interpretation
+
+The perplexity curve drops sharply up to k = 4 and then flattens, so 4 topics is the elbow and the model used here. Reading the top words and the documents that load on each topic gives these themes:
+
+| Topic | Theme | Evidence from top words | Main articles |
+|---|---|---|---|
+| 1 | Coalition government and public administration | government, public, coalition, administration, governance, policy, relationship | news_8 (coalition webinar), news_7 (overhaul of state bureaucracy) |
+| 2 | Education and labour priorities | department, priority, school, unemployment, labour, work | news_2 (Mayibuye Primary School), news_3 (new Labour Minister) |
+| 3 | Public safety and weather alerts | police, cape, cold, weather, western, team, sandf | news_10 (Western Cape weather), news_4 (Benoni kidnapping), news_5 (SANDF condolences) |
+| 4 | Service delivery and financial accountability | service, invoice, department, pay, eskom, psc, provider, official | news_1 (Eskom fraud case), news_6 (late payment of suppliers), news_9 (PSC on bribes) |
+
+Most articles are dominated by a single topic with a gamma above 0.8, which shows the topics separate the corpus well. The clearest mixed case is news_7, which is about 63% Topic 1 and 30% Topic 4 because it discusses bureaucracy reform and accountability of officials together. Topic 4 is the most prevalent theme, which fits a government news feed where three of the ten stories deal with how public money is handled. The beta values are small (the strongest word in each topic sits around 0.02 to 0.04) because the vocabulary has 875 terms spread over only 10 short documents. That is normal for LDA on a small corpus, and the ranking of words matters more than their absolute size.
+
+# 2.3 Visualising the top words in each topic
+
+## Method 1: Bar chart of word probabilities
+
+```{r bar_chart, fig.height = 7}
+top_terms %>%
+  left_join(topic_labels, by = "topic") %>%
+  mutate(panel = paste0("Topic ", topic, ": ", label),
+         term = reorder_within(term, beta, panel)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ panel, scales = "free_y") +
+  scale_y_reordered() +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = paste("Top", params$top_k, "words per LDA topic"),
+       subtitle = "South African government news, July 2024",
+       x = "Probability of word in topic (beta)", y = "Word") +
+  theme_minimal(base_size = 11)
+```
+
+## Method 2: Word cloud per topic
+
+Word size is proportional to beta, so the biggest words carry the most weight in the topic.
+
+```{r wordclouds, fig.height = 8}
+pal <- brewer.pal(8, "Dark2")
+n <- params$n_topics
+par(mfrow = c(ceiling(n / 2), 2), mar = c(0, 0, 2, 0))
+for (t in seq_len(n)) {
+  d <- beta %>% filter(topic == t) %>% slice_max(beta, n = 30)
+  wordcloud(d$term, d$beta, scale = c(3.2, 0.6), random.order = FALSE,
+            rot.per = 0, colors = pal)
+  title(main = paste0("Topic ", t, ": ", topic_labels$label[t]), cex.main = 1)
+}
+```
+
+## Method 3: Heat map of word weights across topics
+
+The heat map shows the same top words against every topic, which makes overlap between topics visible.
+
+```{r heatmap, fig.height = 8}
+heat_terms <- unique(top_terms$term)
+beta %>%
+  filter(term %in% heat_terms) %>%
+  mutate(topic = paste("Topic", topic),
+         term = factor(term, levels = rev(heat_terms))) %>%
+  ggplot(aes(topic, term, fill = beta)) +
+  geom_tile(colour = "white") +
+  scale_fill_gradient(low = "#F7FBFF", high = "#08306B", name = "beta") +
+  labs(title = "Weight of each top word across all topics",
+       x = "Topic", y = "Word") +
+  theme_minimal(base_size = 10)
+```
+
+## Document to topic heat map
+
+```{r doc_heat, fig.height = 5}
+gamma %>%
+  mutate(topic = paste("Topic", topic),
+         document = factor(document, levels = rev(news_df$file_name))) %>%
+  ggplot(aes(topic, document, fill = gamma)) +
+  geom_tile(colour = "white") +
+  geom_text(aes(label = sprintf("%.2f", gamma)), size = 3) +
+  scale_fill_gradient(low = "white", high = "#238B45", name = "gamma") +
+  labs(title = "Share of each topic within each news article",
+       x = "Topic", y = "Article") +
+  theme_minimal()
+```
