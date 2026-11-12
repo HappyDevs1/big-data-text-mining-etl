@@ -1,0 +1,391 @@
+---
+title: "Question 4: ETL with R and PostgreSQL"
+subtitle: "Scraping, cleaning and loading an online book catalogue"
+author: "Happy Mahlangu"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: kable
+params:
+  pages: 5
+  refresh: false
+  db_name: "itbda_etl"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 9, fig.height = 5, dpi = 110, fig.path = "figures/")
+library(httr)
+library(rvest)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(readr)
+library(purrr)
+library(ggplot2)
+library(DBI)
+library(RPostgres)
+options(width = 120)
+```
+
+# Use case
+
+A small online bookshop wants to watch a competitor's catalogue. The questions it cares about are simple: how the competitor prices books, whether better reviewed books are priced or stocked differently, and which categories hold the most stock value. The competitor's site is [books.toscrape.com](https://books.toscrape.com), a public catalogue built for scraping practice, so collecting it is allowed. The site has no `robots.txt` (the request returns 404), which means no path is disallowed. The scraper still waits between requests and caches every page so it never asks for the same page twice.
+
+The ETL flow is:
+
+1. **Extract**: scrape the listing pages and every book's detail page, keeping all fields as raw text exactly as they appear on the site.
+2. **Transform**: use regular expressions to pull numbers out of text, fix inconsistent and spurious values, and impute missing ones.
+3. **Load**: write a clean CSV, import it into a PostgreSQL table and answer the business questions with SQL.
+
+# 4.1 Extract: scraping the raw records
+
+```{r scrape_helpers}
+base_url <- "https://books.toscrape.com/catalogue/"
+cache_dir <- "../data/raw/q4_pages"
+dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+
+get_page <- function(url) {
+  file <- file.path(cache_dir, paste0(str_replace_all(str_remove(url, "^https?://"), "[^A-Za-z0-9]+", "_"), ".html"))
+  if (!file.exists(file) || params$refresh) {
+    Sys.sleep(0.5)  # polite delay between requests
+    resp <- GET(url, user_agent("itbda-student-etl/1.0 (educational project)"))
+    stop_for_status(resp)
+    writeLines(content(resp, as = "text", encoding = "UTF-8"), file, useBytes = TRUE)
+  }
+  read_html(file, encoding = "UTF-8")
+}
+
+# Listing page: title as shown in the grid (often cut short) and the link to the detail page
+scrape_listing <- function(page_no) {
+  page  <- get_page(paste0(base_url, "page-", page_no, ".html"))
+  cards <- html_elements(page, "article.product_pod")
+  tibble(
+    listing_page = page_no,
+    title_listing = html_text(html_element(cards, "h3 a")),
+    url = paste0(base_url, html_attr(html_element(cards, "h3 a"), "href"))
+  )
+}
+
+# Detail page: everything kept as raw text, no cleaning here
+scrape_book <- function(url) {
+  page  <- get_page(url)
+  table <- html_table(html_element(page, "table.table-striped"))
+  field <- function(name) table$X2[table$X1 == name]
+  tibble(
+    url               = url,
+    title_raw         = html_text(html_element(page, ".product_main h1")),
+    price_raw         = html_text(html_element(page, ".product_main .price_color")),
+    rating_raw        = html_attr(html_element(page, ".product_main .star-rating"), "class"),
+    availability_raw  = html_text(html_element(page, ".product_main .availability")),
+    category_raw      = html_text(html_elements(page, ".breadcrumb li"))[3],
+    description_raw   = html_text(html_element(page, "#product_description + p")),
+    upc_raw           = field("UPC"),
+    product_type_raw  = field("Product Type"),
+    price_excl_tax_raw = field("Price (excl. tax)"),
+    tax_raw           = field("Tax"),
+    reviews_raw       = field("Number of reviews")
+  )
+}
+```
+
+```{r scrape}
+listing <- map_dfr(seq_len(params$pages), scrape_listing)
+books_raw <- listing %>%
+  left_join(map_dfr(listing$url, scrape_book), by = "url") %>%
+  mutate(scraped_at = format(Sys.time(), "%Y-%m-%d %H:%M:%S"))
+
+write_csv(books_raw, "../data/raw/q4_books_raw.csv")
+dim(books_raw)
+glimpse(books_raw)
+```
+
+## What is wrong with the raw data
+
+```{r raw_problems}
+books_raw %>%
+  select(title_listing, title_raw, price_raw, rating_raw, availability_raw, category_raw) %>%
+  head(6) %>%
+  mutate(across(everything(), ~ str_trunc(str_replace_all(.x, "\\s+", " "), 45)))
+
+profile_raw <- tibble(
+  issue = c("Listing title cut short with '...'",
+            "Price stored as text with a currency sign",
+            "Rating stored as a CSS class word, not a number",
+            "Stock count buried in padded text",
+            "Placeholder category (Default or Add a comment)",
+            "Description missing",
+            "Description ends with the '...more' teaser",
+            "Description text repeated inside itself",
+            "Product type is the same for every row",
+            "Tax is the same for every row",
+            "Number of reviews is the same for every row"),
+  rows_affected = c(
+    sum(str_detect(books_raw$title_listing, "\\.\\.\\.$")),
+    sum(str_detect(books_raw$price_raw, "[^0-9.]")),
+    sum(str_detect(books_raw$rating_raw, "star-rating [A-Z][a-z]+")),
+    sum(str_detect(books_raw$availability_raw, "^\\s|\\s$")),
+    sum(str_squish(books_raw$category_raw) %in% c("Default", "Add a comment")),
+    sum(is.na(books_raw$description_raw) | str_squish(books_raw$description_raw) == ""),
+    sum(str_detect(books_raw$description_raw, "\\.\\.\\.more$"), na.rm = TRUE),
+    sum(str_detect(books_raw$description_raw, "^(.{60}).*\\1"), na.rm = TRUE),
+    ifelse(n_distinct(books_raw$product_type_raw) == 1, nrow(books_raw), 0),
+    ifelse(n_distinct(books_raw$tax_raw) == 1, nrow(books_raw), 0),
+    ifelse(n_distinct(books_raw$reviews_raw) == 1, nrow(books_raw), 0)
+  )
+)
+profile_raw
+```
+
+The raw table has the usual problems of real web data. Every number is trapped inside text, three columns never change and so carry no information, many titles in the listing are cut short, most descriptions repeat themselves, and some books sit in placeholder categories that are really missing values.
+
+# 4.2 Transform: cleaning, denoising and imputation
+
+## Step 1: Parse numbers and labels with regular expressions
+
+| Field | Raw example | Regex or rule | Clean value |
+|---|---|---|---|
+| Price | `£51.77` | `[0-9]+\.[0-9]{2}` | 51.77 |
+| Rating | `star-rating Three` | `(?<=star-rating )[A-Za-z]+` then word to number | 3 |
+| Stock | `In stock (22 available)` | `(?<=\()[0-9]+(?= available)` | 22 |
+| UPC | `a897fe39b1053632` | must match `^[0-9a-f]{16}$` | kept as key |
+| Category | padded with new lines | `str_squish` | Poetry |
+
+```{r parse}
+rating_words <- c(One = 1, Two = 2, Three = 3, Four = 4, Five = 5)
+
+books <- books_raw %>%
+  transmute(
+    upc          = str_squish(upc_raw),
+    title        = str_squish(title_raw),
+    title_was_truncated = str_detect(title_listing, "\\.\\.\\.$"),
+    category     = str_squish(category_raw),
+    price_gbp    = as.numeric(str_extract(price_raw, "[0-9]+\\.[0-9]{2}")),
+    rating       = unname(rating_words[str_extract(rating_raw, "(?<=star-rating )[A-Za-z]+")]),
+    stock_count  = as.integer(str_extract(availability_raw, "(?<=\\()[0-9]+(?= available)")),
+    description  = str_squish(description_raw),
+    url,
+    scraped_at
+  )
+
+stopifnot(all(str_detect(books$upc, "^[0-9a-f]{16}$")))
+summary(select(books, price_gbp, rating, stock_count))
+```
+
+## Step 2: Remove spurious columns and duplicates
+
+`product_type_raw`, `tax_raw` and `reviews_raw` hold one value for all `r nrow(books_raw)` rows ("Books", "£0.00" and "0"). A column that never changes cannot explain anything, so they were not carried over. `price_excl_tax_raw` is a copy of the price because tax is always zero. Rows are de-duplicated on the UPC, the product's unique code.
+
+```{r dedupe}
+n_before <- nrow(books)
+books <- books %>% distinct(upc, .keep_all = TRUE)
+tibble(rows_before = n_before, rows_after = nrow(books), duplicates_removed = n_before - nrow(books))
+```
+
+## Step 3: Denoise the description text
+
+Most descriptions start with a cut-off preview, then repeat the whole text and end with "...more". The repeated preview is found with a back reference and removed, and the teaser is stripped.
+
+```{r denoise}
+dedupe_description <- function(x) {
+  start <- str_sub(x, 1, 60)
+  second <- str_locate_all(x, fixed(start))     # every place the opening appears
+  map2_chr(x, second, function(txt, pos) {
+    if (is.na(txt)) return(NA_character_)
+    if (nrow(pos) >= 2) str_sub(txt, pos[2, 1]) else txt
+  })
+}
+
+books <- books %>%
+  mutate(description = description %>%
+           dedupe_description() %>%
+           str_remove("\\s*\\.\\.\\.more$") %>%
+           str_squish())
+
+tibble(
+  avg_words_raw   = mean(str_count(books_raw$description_raw, "\\S+"), na.rm = TRUE),
+  avg_words_clean = mean(str_count(books$description, "\\S+"), na.rm = TRUE),
+  still_repeating = sum(str_detect(books$description, "^(.{60}).*\\1"), na.rm = TRUE),
+  still_has_more  = sum(str_detect(books$description, "\\.\\.\\.more$"), na.rm = TRUE)
+)
+```
+
+## Step 4: Missing values and imputation
+
+"Default" and "Add a comment" are not genres. They are what the shop's system shows when nobody set a category, so they are treated as missing. A blank description or a stock count the regex could not read would also be missing.
+
+```{r missing}
+books <- books %>%
+  mutate(category = na_if(na_if(category, "Default"), "Add a comment"),
+         description = na_if(description, ""))
+
+colSums(is.na(books))
+```
+
+Two imputation methods are used, one for text and one for numbers:
+
+* **Category, by nearest neighbour on the description.** Each description is turned into a TF-IDF vector. A book with a missing category gets the most common category among its three most similar labelled books (cosine similarity). If none of the three is similar enough (similarity below 0.05), the book is labelled "Uncategorised" rather than forced into a wrong genre.
+* **Stock count, by the median of its category.** This is the safe choice for counts because the median is not pulled by extreme values. No stock values failed to parse in this scrape, but the rule stays in the pipeline for future runs.
+* **Description, by a constant** ("No description available") so that text columns never contain NULL.
+
+```{r impute_category}
+library(tidytext)
+
+desc_vectors <- books %>%
+  mutate(doc = row_number()) %>%
+  unnest_tokens(word, description) %>%
+  anti_join(stop_words, by = "word") %>%
+  filter(!str_detect(word, "\\d")) %>%
+  count(doc, word) %>%
+  bind_tf_idf(word, doc, n) %>%
+  select(doc, word, tf_idf) %>%
+  pivot_wider(names_from = word, values_from = tf_idf, values_fill = 0)
+
+m <- as.matrix(desc_vectors[, -1]); rownames(m) <- desc_vectors$doc
+m <- m / sqrt(rowSums(m^2))
+cos_sim <- m %*% t(m)
+
+knn_category <- function(i, labelled, k = 3, min_sim = 0.05) {
+  sims <- cos_sim[as.character(i), as.character(labelled)]
+  top  <- head(sort(sims, decreasing = TRUE), k)
+  if (max(top) < min_sim) return(c(category = "Uncategorised", similarity = max(top)))
+  votes <- table(books$category[as.integer(names(top))])
+  c(category = names(votes)[which.max(votes)], similarity = max(top))
+}
+
+labelled <- which(!is.na(books$category))
+missing  <- which(is.na(books$category))
+
+# How reliable is it? Leave one out test on books whose category is known
+loo <- sapply(labelled, function(i) knn_category(i, setdiff(labelled, i))["category"])
+loo_accuracy <- mean(loo == books$category[labelled])
+baseline <- max(table(books$category[labelled])) / length(labelled)
+tibble(knn_accuracy = round(loo_accuracy, 2), majority_class_baseline = round(baseline, 2))
+
+imputed <- t(sapply(missing, knn_category, labelled = labelled))
+books$category_imputed <- FALSE
+books$category[missing] <- imputed[, "category"]
+books$category_imputed[missing] <- TRUE
+
+books %>% filter(category_imputed) %>%
+  transmute(title = str_trunc(title, 50), imputed_category = category,
+            best_similarity = round(as.numeric(imputed[, "similarity"]), 3))
+```
+
+The leave one out test shows the nearest neighbour rule is right `r round(100 * loo_accuracy)`% of the time, compared with `r round(100 * baseline)`% for always guessing the largest category. That is better than guessing, but with 28 genres and only 100 short blurbs it is not strong enough to trust every guess. The similarity threshold is what keeps it honest: only `r sum(imputed[, "category"] != "Uncategorised")` of the `r length(missing)` books were close enough to a labelled book to take its genre, and the rest are labelled "Uncategorised". Every imputed row is flagged in `category_imputed` so an analyst can filter them out.
+
+```{r impute_rest}
+books <- books %>%
+  group_by(category) %>%
+  mutate(stock_imputed = is.na(stock_count),
+         stock_count = ifelse(is.na(stock_count), as.integer(median(stock_count, na.rm = TRUE)), stock_count)) %>%
+  ungroup() %>%
+  mutate(description_imputed = is.na(description),
+         description = coalesce(description, "No description available"),
+         description_words = ifelse(description_imputed, 0L, str_count(description, "\\S+")),
+         price_band = cut(price_gbp, breaks = c(0, 20, 40, Inf),
+                          labels = c("Budget (under 20)", "Mid (20 to 40)", "Premium (over 40)"),
+                          right = FALSE) %>% as.character())
+
+colSums(is.na(books))
+```
+
+## Step 5: Outlier check
+
+```{r outliers}
+iqr_flag <- function(x) x < quantile(x, 0.25) - 1.5 * IQR(x) | x > quantile(x, 0.75) + 1.5 * IQR(x)
+tibble(price_outliers = sum(iqr_flag(books$price_gbp)),
+       stock_outliers = sum(iqr_flag(books$stock_count)),
+       price_range = paste(range(books$price_gbp), collapse = " to "),
+       stock_range = paste(range(books$stock_count), collapse = " to "))
+```
+
+```{r before_after_plot, fig.height = 4.5}
+ggplot(books, aes(factor(rating), price_gbp, fill = factor(rating))) +
+  geom_boxplot(show.legend = FALSE, alpha = 0.8) +
+  geom_jitter(width = 0.15, size = 1.2, alpha = 0.5, show.legend = FALSE) +
+  scale_fill_brewer(palette = "Blues") +
+  labs(title = "Price by star rating after cleaning",
+       subtitle = "Each point is one book; ratings were parsed from CSS class names",
+       x = "Star rating", y = "Price (GBP)") +
+  theme_minimal()
+```
+
+## Export the clean dataset
+
+```{r export}
+books_clean <- books %>%
+  select(upc, title, title_was_truncated, category, category_imputed, price_gbp, price_band,
+         rating, stock_count, stock_imputed, description, description_imputed,
+         description_words, url, scraped_at)
+
+write_csv(books_clean, "../data/processed/q4_books_clean.csv", na = "NA")
+glimpse(books_clean)
+```
+
+# 4.3 Load and analyse in PostgreSQL
+
+## Import into a relational table
+
+The table, its constraints and the `\copy` import live in `sql/01_create_and_load.sql`. The CHECK constraints act as a final quality gate: a rating outside 1 to 5 or a negative stock count would make the import fail. The script is run with `psql`:
+
+```{r create_db}
+pg <- dbConnect(Postgres(), dbname = "postgres")
+if (!dbGetQuery(pg, "SELECT COUNT(*) AS n FROM pg_database WHERE datname = $1",
+                params = list(params$db_name))$n) {
+  invisible(dbExecute(pg, paste("CREATE DATABASE", params$db_name)))
+}
+dbDisconnect(pg)
+```
+
+```{r load_psql, comment = ""}
+load_log <- system2("psql", c("-d", params$db_name, "-X", "-f", "sql/01_create_and_load.sql"),
+                    stdout = TRUE, stderr = TRUE)
+cat(load_log, sep = "\n")
+```
+
+```{r connect}
+con <- dbConnect(Postgres(), dbname = params$db_name)
+dbGetQuery(con, "SELECT column_name, data_type FROM information_schema.columns
+                 WHERE table_name = 'books' ORDER BY ordinal_position")
+```
+
+## Investigation 1: Does a better rating mean a higher price or more stock?
+
+```{sql, connection = con, code = readLines("sql/02_rating_vs_price_and_stock.sql"), output.var = "q1"}
+```
+
+```{r show_q1}
+q1
+```
+
+**Interpretation.** The ratings are spread almost evenly, with each star level holding 18% to 22% of the catalogue. Price hardly changes with rating: one star books average £35.52 while five star books average £30.01, and the correlation between rating and price is only -0.12. If anything, the best reviewed books are slightly cheaper. Stock is flat at about 17 units for every rating, with a correlation of 0.06, so the competitor does not stock up on popular titles either. For our shop this means the competitor does not use reviews when pricing. Highly rated books that we sell at a premium are therefore exposed, because shoppers can find them cheaper there. With only 100 books the correlations are weak evidence, so this should be checked again on the full catalogue of 1,000 titles.
+
+## Investigation 2: Which categories hold the most stock value?
+
+```{sql, connection = con, code = readLines("sql/03_category_value_ranking.sql"), output.var = "q2"}
+```
+
+```{r show_q2}
+q2
+```
+
+**Interpretation.** Sequential Art (graphic novels) and Nonfiction are the two most valuable categories and together hold about 32% of the stock value among categories with at least three titles. Their lead comes from the number of titles they carry, not from price: their average prices (£32.42 and £31.82) are below Fiction (£43.87) and Childrens (£50.20). Childrens books are the most expensive group but also the worst rated (average 2.0 stars), which looks like a pricing weakness. Fiction combines a high price with the best average rating (3.8), so it is the competitor's strongest category. The "Uncategorised" group, which exists only because of missing source data, still ranks fourth with almost 9% of stock value. This shows that poor category data would hide a real share of the catalogue from category level reporting, which is why the imputation flags matter.
+
+```{r q2_plot, fig.height = 5}
+q2 %>%
+  mutate(category = reorder(category, stock_value_gbp)) %>%
+  ggplot(aes(stock_value_gbp, category, fill = avg_price_gbp)) +
+  geom_col() +
+  scale_fill_gradient(low = "#C6DBEF", high = "#08519C", name = "Avg price (GBP)") +
+  labs(title = "Stock value by category (categories with at least 3 titles)",
+       x = "Stock value = price x units in stock (GBP)", y = "Category") +
+  theme_minimal()
+```
+
+```{r disconnect, include = FALSE}
+dbDisconnect(con)
+```
+
