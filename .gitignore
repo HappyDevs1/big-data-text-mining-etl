@@ -8,3 +8,4 @@ q1-mapreduce/target/
 q1-mapreduce/hdfs-data/
 *.log
 ~$*
+.claude/
