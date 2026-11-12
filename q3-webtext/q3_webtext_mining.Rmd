@@ -1,0 +1,463 @@
+---
+title: "Question 3: WebText API Proof of Concept"
+subtitle: "Scraping, cleaning and summarising a web article from a single link"
+author: "Happy Mahlangu"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: kable
+params:
+  url: "https://en.wikipedia.org/wiki/Climate_change_in_Africa"
+  refresh: false
+  n_sentences: 6
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 9, fig.height = 6, dpi = 110, fig.path = "figures/")
+library(httr)
+library(rvest)
+library(xml2)
+library(robotstxt)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(readr)
+library(tidytext)
+library(textstem)
+library(textrank)
+library(lexRankr)
+library(igraph)
+library(ggraph)
+library(ggplot2)
+set.seed(2026)
+```
+
+The whole pipeline is driven by one input, the web link in `params$url`. Everything below runs from that link, which is the core idea of the WebText API. The chosen page is the Wikipedia article **Climate change in Africa**, which fits the theme in the brief of treating language as environmental data.
+
+# 3.1 Extracting clean web text into an R data structure
+
+## Fair use of web scraping
+
+Before any request is sent, the scraper checks the rules of the site. The design follows these fair use practices:
+
+1. **robots.txt is checked** and the run stops if the path is disallowed.
+2. **One page, one request.** The HTML is saved to disk and reused on later runs (`params$refresh = FALSE`), so the site is not hit again every time the notebook is knitted.
+3. **A clear user agent** says what the client is and why it is visiting.
+4. **Licensed content.** Wikipedia text is published under CC BY-SA 4.0, which allows reuse with attribution. The source link is stored with the data.
+5. **No personal data** is collected and nothing is republished as is. The output is analysis and short extracts.
+
+```{r fair_use}
+check_scraping_allowed <- function(url) {
+  allowed <- robotstxt::paths_allowed(url, warn = FALSE)
+  if (!isTRUE(allowed)) stop("robots.txt does not allow scraping: ", url)
+  allowed
+}
+
+check_scraping_allowed(params$url)
+```
+
+## Fetching the page
+
+```{r fetch}
+fetch_page <- function(url, cache_dir = "../data/raw", refresh = FALSE) {
+  cache_file <- file.path(cache_dir, paste0("q3_", str_replace_all(basename(url), "[^A-Za-z0-9]", "_"), ".html"))
+  if (file.exists(cache_file) && !refresh) {
+    return(list(html = read_html(cache_file, encoding = "UTF-8"), cache_file = cache_file, from_cache = TRUE))
+  }
+  Sys.sleep(1)  # be polite even for a single request
+  resp <- GET(url, user_agent("itbda-student-webtext-poc/1.0 (educational text mining project)"))
+  stop_for_status(resp)
+  html_text <- content(resp, as = "text", encoding = "UTF-8")
+  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+  writeLines(html_text, cache_file, useBytes = TRUE)
+  list(html = read_html(html_text), cache_file = cache_file, from_cache = FALSE)
+}
+
+page <- fetch_page(params$url, refresh = params$refresh)
+page[c("cache_file", "from_cache")]
+```
+
+## Extracting the article into a data frame
+
+The article body lives inside `.mw-parser-output`. Headings and paragraphs are read in page order so that every paragraph keeps the section and subsection it belongs to. Infoboxes, tables, image captions and navigation boxes are left out by only keeping `h2`, `h3` and `p` nodes.
+
+```{r extract}
+extract_article <- function(html) {
+  body  <- html_element(html, "#mw-content-text .mw-parser-output")
+  nodes <- html_elements(body, xpath = ".//h2 | .//h3 | .//p")
+
+  section <- "Introduction"; subsection <- NA_character_
+  rows <- vector("list", length(nodes))
+  for (i in seq_along(nodes)) {
+    tag  <- html_name(nodes[[i]])
+    text <- html_text2(nodes[[i]])
+    if (tag == "h2") { section <- text; subsection <- NA_character_; next }
+    if (tag == "h3") { subsection <- text; next }
+    rows[[i]] <- tibble(section = section, subsection = subsection, raw_text = text)
+  }
+  bind_rows(rows) %>% mutate(para_id = row_number(), .before = 1)
+}
+
+webtext <- list(
+  meta = list(
+    url           = params$url,
+    title         = html_text2(html_element(page$html, "#firstHeading")),
+    last_modified = html_text2(html_element(page$html, "#footer-info-lastmod")),
+    retrieved     = format(file.info(page$cache_file)$mtime, "%Y-%m-%d %H:%M"),
+    licence       = "CC BY-SA 4.0, Wikipedia contributors"
+  ),
+  paragraphs = extract_article(page$html)
+)
+
+str(webtext, max.level = 2)
+webtext$paragraphs %>% count(section, name = "paragraphs")
+webtext$paragraphs %>% slice(1:4) %>% mutate(raw_text = str_trunc(raw_text, 160))
+```
+
+The result is a named list, a small R object that an API can return as JSON. `meta` holds the provenance and `paragraphs` is a tidy data frame with one row per paragraph.
+
+# 3.2 Preprocessing the text
+
+The raw paragraphs still carry noise that is not part of the content. A quick profile shows how much:
+
+```{r noise}
+webtext$paragraphs %>%
+  summarise(
+    paragraphs          = n(),
+    empty_or_short      = sum(str_count(raw_text, "\\S+") < 12),
+    citation_markers    = sum(str_count(raw_text, "\\[[^\\]]{1,30}\\]")),
+    non_content_section = sum(section %in% c("See also", "References", "External links", "Further reading", "Notes")),
+    non_ascii_chars     = sum(str_count(raw_text, "[^\\x01-\\x7F]"))
+  )
+```
+
+The cleaning is done in two layers. Sentence level text stays readable because summaries are made from real sentences. Word level text is reduced to meaningful lemmas for counting.
+
+| Step | Technique | Purpose |
+|---|---|---|
+| 1 | Drop non content sections (See also, References, External links) | Removes link lists and bibliography |
+| 2 | Strip citation markers such as [12], [a] and [citation needed] | Wikipedia footnotes are not part of the prose |
+| 3 | Normalise unicode quotes, dashes and non breaking spaces, collapse whitespace | One consistent character set |
+| 4 | Remove very short paragraphs and duplicates | Captions and stubs carry little information |
+| 5 | Split into sentences and drop fragments under 6 words | Units for extractive summarisation |
+| 6 | Lower case, remove numbers, punctuation and stop words (plus page boilerplate words) | Keeps content words only |
+| 7 | Lemmatise | "droughts" and "drought" count as one term |
+
+```{r clean_paragraphs}
+drop_sections <- c("See also", "References", "External links", "Further reading", "Notes")
+
+clean_sentence_text <- function(x) {
+  x %>%
+    str_remove_all("\\[[^\\]]{1,30}\\]") %>%                        # 2
+    str_replace_all("[\\u2018\\u2019]", "'") %>%                      # 3
+    str_replace_all("[\\u201C\\u201D]", "\"") %>%
+    str_replace_all("[\\u2013\\u2014]", " to ") %>%
+    str_replace_all("[\\u00A0\\u2009\\u202F]", " ") %>%
+    str_replace_all("\\s+([,.;:])", "\\1") %>%
+    str_squish()
+}
+
+paras <- webtext$paragraphs %>%
+  filter(!section %in% drop_sections) %>%                           # 1
+  mutate(text = clean_sentence_text(raw_text)) %>%
+  filter(str_count(text, "\\S+") >= 12) %>%                        # 4
+  distinct(text, .keep_all = TRUE)
+
+sentences <- paras %>%
+  select(para_id, section, text) %>%
+  unnest_tokens(sentence, text, token = "sentences", to_lower = FALSE) %>%   # 5
+  filter(str_count(sentence, "\\S+") >= 6) %>%
+  mutate(sentence_id = row_number(), .before = 1)
+
+boilerplate <- c("climate", "change", "africa", "african", "wikipedia", "also", "can", "may",
+                 "will", "however", "including", "et", "al")
+
+words <- sentences %>%
+  select(sentence_id, section, sentence) %>%
+  unnest_tokens(word, sentence) %>%                                  # 6
+  filter(!str_detect(word, "\\d"), !word %in% stop_words$word) %>%
+  mutate(lemma = lemmatize_words(word)) %>%                          # 7
+  filter(!lemma %in% c(stop_words$word, boilerplate), nchar(lemma) > 2)
+
+tibble(
+  stage = c("Raw paragraphs", "Clean paragraphs", "Sentences", "Content words (lemmas)", "Unique lemmas"),
+  count = c(nrow(webtext$paragraphs), nrow(paras), nrow(sentences), nrow(words), n_distinct(words$lemma))
+)
+
+paras %>% slice_max(str_count(raw_text, "\\["), n = 1, with_ties = FALSE) %>% select(raw_text, text) %>% t() %>% as.data.frame() %>%
+  setNames("Before and after cleaning") %>% mutate(across(everything(), ~ str_trunc(.x, 400)))
+
+dir.create("../data/processed", showWarnings = FALSE)
+write_csv(paras %>% select(para_id, section, subsection, text), "../data/processed/q3_paragraphs_clean.csv")
+```
+
+"climate", "change" and "africa" are removed at word level because they are in the page title and appear in nearly every sentence. Keeping them would push them to the top of every chart without telling us anything new.
+
+# 3.3 Text summarisation
+
+The article is condensed with three different summarisation techniques: two extractive sentence rankers and one keyword based summary per section. Each of them answers a different question.
+
+## Technique 1: Word frequency sentence scoring (Luhn method)
+
+Each sentence is scored by the average normalised frequency of its content words. Sentences packed with the article's most frequent ideas rank highest.
+
+```{r freq_summary}
+word_freq <- words %>% count(lemma, sort = TRUE) %>% mutate(weight = n / max(n))
+
+freq_scores <- words %>%
+  left_join(word_freq, by = "lemma") %>%
+  group_by(sentence_id) %>%
+  summarise(freq_score = sum(weight) / sqrt(n()), .groups = "drop")   # sqrt damps the bias to long sentences
+
+freq_summary <- sentences %>%
+  inner_join(freq_scores, by = "sentence_id") %>%
+  slice_max(freq_score, n = params$n_sentences) %>%
+  arrange(sentence_id)
+
+freq_summary %>% select(sentence_id, section, sentence)
+```
+
+## Technique 2: TextRank (graph based)
+
+TextRank builds a graph where each sentence is a node and edges are weighted by how many lemmas two sentences share. PageRank then finds the sentences that are most connected to the rest of the article, which are the ones that best represent it.
+
+```{r textrank}
+tr <- textrank_sentences(
+  data        = sentences %>% transmute(textrank_id = sentence_id, sentence),
+  terminology = words %>% transmute(textrank_id = sentence_id, lemma)
+)
+
+textrank_summary <- tr$sentences %>%
+  rename(sentence_id = textrank_id, textrank = textrank) %>%
+  slice_max(textrank, n = params$n_sentences) %>%
+  arrange(sentence_id) %>%
+  left_join(sentences %>% select(sentence_id, section), by = "sentence_id")
+
+textrank_summary %>% select(sentence_id, section, sentence)
+```
+
+## Technique 3: LexRank (TF-IDF cosine similarity)
+
+LexRank is also graph based but compares sentences with TF-IDF weighted cosine similarity, so rare shared words count for more than common ones.
+
+```{r lexrank}
+lex <- lexRank(sentences$sentence, docId = sentences$sentence_id,
+               n = params$n_sentences, continuous = TRUE, returnTies = FALSE,
+               usePageRank = TRUE, removePunc = TRUE, removeNum = TRUE, toLower = TRUE,
+               stemWords = TRUE, rmStopWords = TRUE, Verbose = FALSE)
+
+lexrank_summary <- lex %>%
+  mutate(sentence_id = as.integer(docId)) %>%
+  arrange(sentence_id) %>%
+  left_join(sentences %>% select(sentence_id, section), by = "sentence_id")
+
+lexrank_summary %>% select(sentence_id, section, sentence)
+```
+
+## Comparing the summaries
+
+```{r compare}
+picked <- list(Frequency = freq_summary$sentence_id,
+               TextRank  = textrank_summary$sentence_id,
+               LexRank   = lexrank_summary$sentence_id)
+
+jaccard <- function(a, b) length(intersect(a, b)) / length(union(a, b))
+
+summary_stats <- tibble(
+  method = names(picked),
+  sentences_kept = lengths(picked),
+  words_kept = sapply(picked, function(ids) sum(str_count(sentences$sentence[ids], "\\S+"))),
+  compression_pct = round(100 * words_kept / sum(str_count(sentences$sentence, "\\S+")), 1),
+  sections_covered = sapply(picked, function(ids) n_distinct(sentences$section[ids]))
+)
+summary_stats
+
+outer(names(picked), names(picked), Vectorize(function(a, b) round(jaccard(picked[[a]], picked[[b]]), 2))) %>%
+  `dimnames<-`(list(names(picked), names(picked)))
+```
+
+## Section by section summary
+
+A single short summary can miss whole parts of a long article. A structured summary picks the highest TextRank sentence inside each section, giving a one line digest per section.
+
+```{r section_summary}
+tr$sentences %>%
+  rename(sentence_id = textrank_id) %>%
+  left_join(sentences %>% select(sentence_id, section), by = "sentence_id") %>%
+  group_by(section) %>%
+  slice_max(textrank, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  arrange(sentence_id) %>%
+  transmute(section, key_sentence = sentence)
+```
+
+## Visualisation 1: Most frequent terms
+
+```{r viz_freq, fig.height = 6}
+word_freq %>%
+  slice_max(n, n = 20) %>%
+  ggplot(aes(n, reorder(lemma, n))) +
+  geom_col(fill = "#2C7FB8") +
+  geom_text(aes(label = n), hjust = -0.2, size = 3.2) +
+  labs(title = "Top 20 content words in 'Climate change in Africa'",
+       subtitle = "After stop word removal and lemmatisation, title words excluded",
+       x = "Number of occurrences", y = "Lemma",
+       caption = "Source: Wikipedia, CC BY-SA 4.0") +
+  expand_limits(x = max(word_freq$n) * 1.08) +
+  theme_minimal()
+```
+
+## Visualisation 2: Bigram network
+
+Pairs of words that appear next to each other at least three times are drawn as a network. Clusters in the network show the main ideas in the article. The pair "climate change" is left out because it is the page title and occurs 101 times.
+
+```{r viz_bigram, fig.height = 7}
+bigrams <- sentences %>%
+  unnest_tokens(bigram, sentence, token = "ngrams", n = 2) %>%
+  separate(bigram, c("w1", "w2"), sep = " ") %>%
+  filter(!w1 %in% stop_words$word, !w2 %in% stop_words$word,
+         !str_detect(w1, "\\d"), !str_detect(w2, "\\d")) %>%
+  count(w1, w2, sort = TRUE) %>%
+  filter(!(w1 == "climate" & w2 == "change"))   # the page title, 101 times, would swamp the graph
+
+bigrams %>%
+  filter(n >= 3) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n, edge_width = n), colour = "#3182BD", show.legend = TRUE) +
+  geom_node_point(colour = "#E6550D", size = 3) +
+  geom_node_text(aes(label = name), repel = TRUE, size = 3.3) +
+  scale_edge_width(range = c(0.4, 2), name = "Times seen together") +
+  scale_edge_alpha(range = c(0.4, 1), guide = "none") +
+  labs(title = "Bigram network of 'Climate change in Africa'",
+       subtitle = "Word pairs that occur together at least 3 times") +
+  theme_void()
+```
+
+## Visualisation 3: Distinctive terms per section (TF-IDF)
+
+Treating each section as its own document, TF-IDF picks the words that are common in a section but rare in the rest of the article. This works as a keyword summary of every section.
+
+```{r viz_tfidf, fig.height = 8}
+words %>%
+  count(section, lemma) %>%
+  bind_tf_idf(lemma, section, n) %>%
+  group_by(section) %>%
+  slice_max(tf_idf, n = 6, with_ties = FALSE) %>%
+  ungroup() %>%
+  mutate(lemma = reorder_within(lemma, tf_idf, section)) %>%
+  ggplot(aes(tf_idf, lemma, fill = section)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ section, scales = "free_y", ncol = 3) +
+  scale_y_reordered() +
+  labs(title = "Most distinctive words in each section",
+       x = "TF-IDF score", y = "Lemma") +
+  theme_minimal(base_size = 10)
+```
+
+## Visualisation 4: Where the summary sentences come from
+
+Each point is a sentence plotted by its position in the article and its TextRank score. Sentences picked by any of the three methods are coloured.
+
+```{r viz_position, fig.height = 5}
+tr$sentences %>%
+  rename(sentence_id = textrank_id) %>%
+  left_join(sentences %>% select(sentence_id, section), by = "sentence_id") %>%
+  mutate(picked_by = case_when(
+    sentence_id %in% Reduce(intersect, picked) ~ "All three methods",
+    sentence_id %in% textrank_summary$sentence_id ~ "TextRank",
+    sentence_id %in% lexrank_summary$sentence_id ~ "LexRank",
+    sentence_id %in% freq_summary$sentence_id ~ "Frequency",
+    TRUE ~ "Not selected")) %>%
+  ggplot(aes(sentence_id, textrank, colour = picked_by, size = picked_by != "Not selected")) +
+  geom_point(alpha = 0.8) +
+  scale_size_manual(values = c(1.2, 3.2), guide = "none") +
+  scale_colour_manual(values = c("All three methods" = "#7B3294", "TextRank" = "#E66101",
+                                 "LexRank" = "#1B9E77", "Frequency" = "#2C7FB8",
+                                 "Not selected" = "grey75"), name = "Selected by") +
+  labs(title = "TextRank importance of every sentence across the article",
+       x = "Sentence position in article", y = "TextRank score") +
+  theme_minimal()
+```
+
+## Visualisation 5: Tone of each section
+
+The Bing lexicon labels words as positive or negative. Net sentiment per 100 words summarises the tone of each section.
+
+```{r viz_sentiment, fig.height = 5}
+sentences %>%
+  unnest_tokens(word, sentence) %>%
+  inner_join(get_sentiments("bing"), by = "word", relationship = "many-to-many") %>%
+  count(section, sentiment) %>%
+  pivot_wider(names_from = sentiment, values_from = n, values_fill = 0) %>%
+  left_join(words %>% count(section, name = "content_words"), by = "section") %>%
+  mutate(net_per_100 = 100 * (positive - negative) / content_words) %>%
+  ggplot(aes(net_per_100, reorder(section, net_per_100), fill = net_per_100 > 0)) +
+  geom_col(show.legend = FALSE) +
+  scale_fill_manual(values = c("TRUE" = "#1A9641", "FALSE" = "#D7191C")) +
+  labs(title = "Net sentiment by section",
+       subtitle = "Positive minus negative words per 100 content words (Bing lexicon)",
+       x = "Net sentiment per 100 words", y = "Section") +
+  theme_minimal()
+```
+
+## Findings
+
+**What the article is about.** After removing the title words, the most frequent lemmas are *adaptation* (64), *increase* (54), *rainfall* (44), *water* (41) and *temperature* (37). Together they show that the article is less about the science of global warming and more about how a hotter, less predictable climate plays out through water and rain, and how Africa responds. *Agriculture*, *drought*, *food* and *flood* in the top 20 point to farming and food supply as the main channel of harm.
+
+**Main idea clusters.** The bigram network splits into a few clear groups: a weather cluster (*extreme weather events*, *rainfall patterns*, *sea level rise*, *heavy rains*), a food and farming cluster (*agriculture sector*, *food security*, *rain fed*, *agricultural production*), a health cluster (*malaria transmission*, *plasmodium falciparum*, *public health*), a policy cluster (*national adaptation*, *adaptation strategies*, *climate finance*, *sustainable development*) and a regional cluster (*eastern africa*, *saharan africa*, *north africa*, *central africa*). These five clusters are effectively a table of contents built from the language alone.
+
+**What each section adds.** The TF-IDF chart shows that sections are well separated. *Water scarcity* is really about disease (*malaria*, *plasmodium*, *mosquito*, *parasite*), which a reader would not guess from the heading. *Impacts by region* focuses on rainfall seasons in the *Sahel*. *Society and culture* is about who funds and does the research (*researcher*, *fund*, *money*, *science*).
+
+**Summaries.** All three methods compress the 322 cleaned sentences to six, which is under 3% of the words. They agree on only one sentence (sentence 65, "The impacts include higher temperatures, droughts, changing rainfall patterns, and increased climate variability"), which makes it the single best one line summary of the page. Beyond that they behave differently, as the Jaccard overlap of 0.09 to 0.20 shows:
+
+* The **frequency method** prefers long sentences full of common terms. It picked policy heavy sentences from the Adaptation section, so its summary reads like a list of programmes.
+* **TextRank** prefers short, general sentences that share words with many others. Its picks centre on agriculture and rainfall, the core thread of the article.
+* **LexRank** chose the opening sentence of the article, which says Africa is among the most vulnerable regions while producing less than 4% of global emissions. TF-IDF weighting rewards that sentence for combining rare and central ideas.
+
+The position chart shows that high scoring sentences are spread across the whole article rather than bunched at the start, so simply taking the first few sentences would miss a lot. Sentence 65 stands well above the rest, which agrees with all three methods choosing it. LexRank leans towards the first 190 sentences, while the frequency method leans towards the end of the article where the Adaptation section sits. Because one six sentence summary covers only three of the eight sections, the section by section TextRank digest is the most complete summary for a reader.
+
+**Tone.** Sentiment is negative in the sections that describe the problem (Introduction at -6.5 and Socioeconomic impacts at -6.2 net words per 100) and turns positive in Adaptation (+1.7) and Society and culture (+8.2), driven by words such as *sustainable*, *improving* and *support*. The article therefore follows a problem then response structure. The most common negative words are *risk*, *drought* and *vulnerable*.
+
+**Limitations.** Wikipedia is written by many editors, so some sections read like lists of projects, which inflates the frequency score of long sentences. The Bing lexicon is general purpose and reads words such as *well* and *like* as positive even when they are not used that way. The summaries are extractive, so they can only reuse sentences already on the page.
+
+## Packaging it as an API call
+
+All the steps above are wrapped in one function, so a new link is the only input needed. This is the shape the WebText API would expose, for example behind a `plumber` endpoint.
+
+```{r api}
+webtext_api <- function(url, n_sentences = 5) {
+  check_scraping_allowed(url)
+  pg <- fetch_page(url)
+  article <- extract_article(pg$html) %>%
+    filter(!section %in% drop_sections) %>%
+    mutate(text = clean_sentence_text(raw_text)) %>%
+    filter(str_count(text, "\\S+") >= 12)
+  sents <- article %>%
+    unnest_tokens(sentence, text, token = "sentences", to_lower = FALSE) %>%
+    filter(str_count(sentence, "\\S+") >= 6) %>%
+    mutate(id = row_number())
+  title <- html_text2(html_element(pg$html, "#firstHeading"))
+  title_words <- unlist(str_split(str_to_lower(title), "\\W+"))
+  terms <- sents %>%
+    unnest_tokens(word, sentence) %>%
+    filter(!word %in% c(stop_words$word, title_words), !str_detect(word, "\\d")) %>%
+    mutate(lemma = lemmatize_words(word))
+  ranked <- textrank_sentences(sents %>% transmute(textrank_id = id, sentence),
+                               terms %>% transmute(textrank_id = id, lemma))
+  list(
+    url = url,
+    title = title,
+    sentences = nrow(sents),
+    keywords = terms %>% count(lemma, sort = TRUE) %>% head(10) %>% pull(lemma),
+    summary = summary(ranked, n = n_sentences, keep.sentence.order = TRUE)
+  )
+}
+
+result <- webtext_api(params$url, n_sentences = 4)
+str(result[c("title", "sentences", "keywords")])
+cat(paste("-", result$summary), sep = "\n")
+```
