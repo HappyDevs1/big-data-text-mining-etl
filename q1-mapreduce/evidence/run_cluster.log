@@ -1,0 +1,110 @@
+namenode is running as process 40183.  Stop it first and ensure /tmp/hadoop-happymahlangu-namenode.pid file is empty before retry.
+already running
+datanode is running as process 40241.  Stop it first and ensure /tmp/hadoop-happymahlangu-datanode.pid file is empty before retry.
+already running
+2026-11-12 19:39:46,851 WARN util.NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+Safe mode is OFF
+2026-11-12 19:39:47,865 WARN util.NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+2026-11-12 19:39:49,239 WARN util.NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+2026-11-12 19:39:53,356 WARN util.NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+Found 7 items
+-rw-r--r--   1 happymahlangu supergroup       4202 2026-11-12 19:39 /user/happymahlangu/keyword-search/input/doc1.txt
+-rw-r--r--   1 happymahlangu supergroup       4301 2026-11-12 19:39 /user/happymahlangu/keyword-search/input/doc2.txt
+-rw-r--r--   1 happymahlangu supergroup       4490 2026-11-12 19:39 /user/happymahlangu/keyword-search/input/doc3.txt
+-rw-r--r--   1 happymahlangu supergroup       1649 2026-11-12 19:39 /user/happymahlangu/keyword-search/input/doc4.txt
+-rw-r--r--   1 happymahlangu supergroup       4020 2026-11-12 19:39 /user/happymahlangu/keyword-search/input/doc5.txt
+-rw-r--r--   1 happymahlangu supergroup       2125 2026-11-12 19:39 /user/happymahlangu/keyword-search/input/doc6.txt
+-rw-r--r--   1 happymahlangu supergroup       2643 2026-11-12 19:39 /user/happymahlangu/keyword-search/input/doc7.txt
+2026-11-12 19:39:55,850 WARN util.NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+Searching for keyword: africa (whole word = true, case insensitive)
+2026-11-12 19:39:56,705 INFO client.DefaultNoHARMFailoverProxyProvider: Connecting to ResourceManager at localhost/127.0.0.1:8032
+2026-11-12 19:40:02,000 INFO mapreduce.JobResourceUploader: Disabling Erasure Coding for path: /tmp/hadoop-yarn/staging/happymahlangu/.staging/job_1794505191986_0001
+2026-11-12 19:40:02,173 INFO input.FileInputFormat: Total input files to process : 7
+2026-11-12 19:40:02,218 INFO mapreduce.JobSubmitter: number of splits:7
+2026-11-12 19:40:02,320 INFO mapreduce.JobSubmitter: Submitting tokens for job: job_1794505191986_0001
+2026-11-12 19:40:02,320 INFO mapreduce.JobSubmitter: Executing with tokens: []
+2026-11-12 19:40:02,421 INFO conf.Configuration: resource-types.xml not found
+2026-11-12 19:40:02,421 INFO resource.ResourceUtils: Unable to find 'resource-types.xml'.
+2026-11-12 19:40:02,783 INFO impl.YarnClientImpl: Submitted application application_1794505191986_0001
+2026-11-12 19:40:02,804 INFO mapreduce.Job: The url to track the job: http://192.168.10.156:8088/proxy/application_1794505191986_0001/
+2026-11-12 19:40:02,804 INFO mapreduce.Job: Running job: job_1794505191986_0001
+2026-11-12 19:40:13,932 INFO mapreduce.Job: Job job_1794505191986_0001 running in uber mode : false
+2026-11-12 19:40:13,933 INFO mapreduce.Job:  map 0% reduce 0%
+2026-11-12 19:40:24,137 INFO mapreduce.Job:  map 29% reduce 0%
+2026-11-12 19:40:32,211 INFO mapreduce.Job:  map 57% reduce 0%
+2026-11-12 19:40:41,377 INFO mapreduce.Job:  map 86% reduce 0%
+2026-11-12 19:40:49,431 INFO mapreduce.Job:  map 100% reduce 0%
+2026-11-12 19:40:50,438 INFO mapreduce.Job:  map 100% reduce 100%
+2026-11-12 19:40:59,497 INFO mapreduce.Job: Job job_1794505191986_0001 completed successfully
+2026-11-12 19:40:59,553 INFO mapreduce.Job: Counters: 53
+	File System Counters
+		FILE: Number of bytes read=319
+		FILE: Number of bytes written=2551419
+		FILE: Number of read operations=0
+		FILE: Number of large read operations=0
+		FILE: Number of write operations=0
+		HDFS: Number of bytes read=24375
+		HDFS: Number of bytes written=459
+		HDFS: Number of read operations=26
+		HDFS: Number of large read operations=0
+		HDFS: Number of write operations=2
+		HDFS: Number of bytes read erasure-coded=0
+	Job Counters 
+		Launched map tasks=7
+		Launched reduce tasks=1
+		Rack-local map tasks=7
+		Total time spent by all maps in occupied slots (ms)=54878
+		Total time spent by all reduces in occupied slots (ms)=8906
+		Total time spent by all map tasks (ms)=54878
+		Total time spent by all reduce tasks (ms)=8906
+		Total vcore-milliseconds taken by all map tasks=54878
+		Total vcore-milliseconds taken by all reduce tasks=8906
+		Total megabyte-milliseconds taken by all map tasks=56195072
+		Total megabyte-milliseconds taken by all reduce tasks=9119744
+	Map-Reduce Framework
+		Map input records=307
+		Map output records=19
+		Map output bytes=275
+		Map output materialized bytes=355
+		Input split bytes=945
+		Combine input records=0
+		Combine output records=0
+		Reduce input groups=7
+		Reduce shuffle bytes=355
+		Reduce input records=19
+		Reduce output records=7
+		Spilled Records=38
+		Shuffled Maps =7
+		Failed Shuffles=0
+		Merged Map outputs=7
+		GC time elapsed (ms)=87
+		CPU time spent (ms)=0
+		Physical memory (bytes) snapshot=0
+		Virtual memory (bytes) snapshot=0
+		Total committed heap usage (bytes)=1330642944
+	Shuffle Errors
+		BAD_ID=0
+		CONNECTION=0
+		IO_ERROR=0
+		WRONG_LENGTH=0
+		WRONG_MAP=0
+		WRONG_REDUCE=0
+	File Input Format Counters 
+		Bytes Read=23430
+	File Output Format Counters 
+		Bytes Written=459
+	za.itbda.keywordsearch.KeywordSearchMapper$SearchCounters
+		DOCUMENTS_WITH_MATCH=4
+		KEYWORD_MATCHES=16
+		LINES_SCANNED=307
+
+Result from HDFS
+2026-11-12 19:41:00,264 WARN util.NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+doc1.txt	keyword=africa	matches=1	locations=(1,64)
+doc2.txt	keyword=africa	matches=3	locations=(1,57) (33,24) (58,81)
+doc3.txt	keyword=africa	matches=8	locations=(1,38) (3,7) (5,7) (40,146) (46,7) (50,142) (52,86) (54,44)
+doc4.txt	keyword=africa	matches=0	locations=not found
+doc5.txt	keyword=africa	matches=4	locations=(1,62) (3,88) (23,121) (38,27)
+doc6.txt	keyword=africa	matches=0	locations=not found
+doc7.txt	keyword=africa	matches=0	locations=not found
+2026-11-12 19:41:01,392 WARN util.NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable

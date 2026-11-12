@@ -1,0 +1,7 @@
+doc1.txt	keyword=AFRICA	matches=3	locations=(1,64) (3,11) (3,95)
+doc2.txt	keyword=AFRICA	matches=5	locations=(1,57) (3,32) (33,24) (58,5) (58,81)
+doc3.txt	keyword=AFRICA	matches=9	locations=(1,38) (3,7) (5,7) (40,146) (46,7) (48,112) (50,142) (52,86) (54,44)
+doc4.txt	keyword=AFRICA	matches=0	locations=not found
+doc5.txt	keyword=AFRICA	matches=5	locations=(1,62) (3,88) (23,121) (38,27) (48,217)
+doc6.txt	keyword=AFRICA	matches=0	locations=not found
+doc7.txt	keyword=AFRICA	matches=0	locations=not found
