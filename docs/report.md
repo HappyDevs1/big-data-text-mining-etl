@@ -1,6 +1,8 @@
 ---
 title: "ITBDA4-14 Project 2: MapReduce, Text Mining and ETL"
-author: "Happy Mahlangu"
+author:
+  - "Happy Mahlangu"
+  - "Student number: EDUV13317839"
 date: "12 November 2026"
 ---
 
