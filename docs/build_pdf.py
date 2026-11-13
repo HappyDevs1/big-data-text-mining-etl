@@ -27,6 +27,7 @@ COVER_FIELDS = {
     "ITSMA4-14": "ITBDA4-14",
     "Mr Sydney Khumalo": "Mr Gilbert Lekula (Ngobeni)",
 }
+REPO_URL = "https://github.com/HappyDevs1/big-data-text-mining-etl"
 NAVY = (0, 0x20 / 255, 0x60 / 255)
 
 
@@ -172,6 +173,12 @@ def toc_page(doc, items, pages, offset):
                 "from": fitz.Rect(x, y - 10, right, y + 3)}
         links.append(link)
         y += 17
+    y += 20
+    page.insert_text((40, y), "Project repository:", fontname="hebo", fontsize=9.5)
+    x = 40 + fitz.get_text_length("Project repository: ", fontname="hebo", fontsize=9.5)
+    page.insert_text((x, y), REPO_URL, fontname="helv", fontsize=9.5, color=(0.02, 0.27, 0.68))
+    w = fitz.get_text_length(REPO_URL, fontname="helv", fontsize=9.5)
+    page.insert_link({"kind": fitz.LINK_URI, "uri": REPO_URL, "from": fitz.Rect(x, y - 10, x + w, y + 3)})
     return links
 
 
