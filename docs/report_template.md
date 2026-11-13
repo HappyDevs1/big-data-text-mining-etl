@@ -8,11 +8,11 @@ date: "12 November 2026"
 
 # Introduction
 
-This report answers the four questions of Project 2. Every answer comes with working code that was run on the datasets provided or on data scraped for this project. The full project, including the datasets, the Java MapReduce project, the R Markdown notebooks and their rendered HTML output, is in the private GitHub repository **https://github.com/HappyDevs1/big-data-text-mining-etl** and in the zipped code submission.
+This report answers the four questions of Project 2. Every answer comes with working code that was run on the datasets provided or on data scraped for this project. The full project, including the datasets, the Java MapReduce project, the R Markdown notebooks and their rendered HTML output, is in the public GitHub repository **https://github.com/HappyDevs1/big-data-text-mining-etl** and in the zipped code submission.
 
 | Question | Folder | Main files |
 |---|---|---|
-| 1. Hadoop MapReduce keyword search | `q1-mapreduce/` | Java source, Hadoop config, run scripts, `evidence/` |
+| 1. Hadoop MapReduce keyword search | `q1-mapreduce/` | `q1_mapreduce_keyword_search.Rmd` and `.html`, Java source, Hadoop config, run scripts, `evidence/` |
 | 2. LDA topic modelling | `q2-lda/` | `q2_lda_topic_modelling.Rmd` and `.html` |
 | 3. WebText API proof of concept | `q3-webtext/` | `q3_webtext_mining.Rmd` and `.html` |
 | 4. ETL with R and PostgreSQL | `q4-etl/` | `q4_etl_books.Rmd` and `.html`, `sql/` |
@@ -437,11 +437,11 @@ COPY 100
 
 ## 4.4 GitHub repository
 
-The private repository **https://github.com/HappyDevs1/big-data-text-mining-etl** contains:
+The public repository **https://github.com/HappyDevs1/big-data-text-mining-etl** contains:
 
 * **Documentation:** the root `README.md` (structure and how to run everything), a README per question folder, and this report (`docs/ITBDA4-14_Project2_Report.docx`, built from `docs/report_template.md` by `docs/build_report.py`).
 * **Datasets:** `data/raw/` (the two zips from the brief, the Wikipedia snapshot, the cached book pages and the raw scraped CSV), `data/extracted/` (unzipped documents) and `data/processed/` (cleaned outputs of Questions 2, 3 and 4).
-* **Notebooks:** one R Markdown notebook per R question with its rendered HTML, showing the flow from raw data to results. For Question 1 the Java project, run scripts and `evidence/` folder (logs, results and screenshots) play the same role.
+* **Notebooks:** one R Markdown notebook per question with its rendered HTML, showing the flow from raw data to results. The Question 1 notebook builds the Java project, runs the MapReduce job with the keyword as a parameter, checks the result against an independent search in R and shows the HDFS and YARN evidence.
 * **History:** the work was committed in small steps, so the commit log shows how the project was built.
 
 # References
