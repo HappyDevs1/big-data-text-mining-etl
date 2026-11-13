@@ -6,9 +6,9 @@ author:
 date: "12 November 2026"
 ---
 
-# Project overview
+# Introduction
 
-This report answers the four questions of Project 2. Every answer comes with working code that was run on the datasets provided or on data scraped for this project. The full project, including the datasets, the Java MapReduce project, the R Markdown notebooks and their rendered HTML output, is in the private GitHub repository **https://github.com/HappyDevs1/big-data-text-mining-etl**.
+This report answers the four questions of Project 2. Every answer comes with working code that was run on the datasets provided or on data scraped for this project. The full project, including the datasets, the Java MapReduce project, the R Markdown notebooks and their rendered HTML output, is in the private GitHub repository **https://github.com/HappyDevs1/big-data-text-mining-etl** and in the zipped code submission.
 
 | Question | Folder | Main files |
 |---|---|---|
@@ -443,3 +443,23 @@ The private repository **https://github.com/HappyDevs1/big-data-text-mining-etl*
 * **Datasets:** `data/raw/` (the two zips from the brief, the Wikipedia snapshot, the cached book pages and the raw scraped CSV), `data/extracted/` (unzipped documents) and `data/processed/` (cleaned outputs of Questions 2, 3 and 4).
 * **Notebooks:** one R Markdown notebook per R question with its rendered HTML, showing the flow from raw data to results. For Question 1 the Java project, run scripts and `evidence/` folder (logs, results and screenshots) play the same role.
 * **History:** the work was committed in small steps, so the commit log shows how the project was built.
+
+# References
+
+Blei, D.M., Ng, A.Y. and Jordan, M.I. (2003) 'Latent Dirichlet allocation', *Journal of Machine Learning Research*, 3, pp. 993-1022.
+
+Books to Scrape (2026) *All products*. Available at: https://books.toscrape.com (Accessed: 12 November 2026).
+
+Erkan, G. and Radev, D.R. (2004) 'LexRank: Graph-based lexical centrality as salience in text summarization', *Journal of Artificial Intelligence Research*, 22, pp. 457-479.
+
+Luhn, H.P. (1958) 'The automatic creation of literature abstracts', *IBM Journal of Research and Development*, 2(2), pp. 159-165.
+
+Matanga, N.Y. (2026) *ITBDA4-14 Project 2 brief*. Eduvos.
+
+Mihalcea, R. and Tarau, P. (2004) 'TextRank: Bringing order into texts', *Proceedings of the 2004 Conference on Empirical Methods in Natural Language Processing*, pp. 404-411.
+
+Silge, J. and Robinson, D. (2017) *Text mining with R: A tidy approach*. Sebastopol, CA: O'Reilly Media.
+
+The Apache Software Foundation (2026) *Apache Hadoop MapReduce tutorial*. Available at: https://hadoop.apache.org/docs/stable/ (Accessed: 12 November 2026).
+
+Wikipedia (2026) *Climate change in Africa*. Available at: https://en.wikipedia.org/wiki/Climate_change_in_Africa (Accessed: 12 November 2026).
