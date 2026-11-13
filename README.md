@@ -16,7 +16,7 @@ data/
   raw/          original zips from the brief, Wikipedia snapshot, cached book pages, raw scrape
   extracted/    unzipped documents (map_reduce_test_docs, sa_news)
   processed/    cleaned outputs of questions 2, 3 and 4
-q1-mapreduce/   Java Maven project, Hadoop config, run scripts and evidence of runs
+q1-mapreduce/   Java Maven project, notebook (.Rmd and .html), Hadoop config, run scripts and evidence
 q2-lda/         LDA notebook (.Rmd), rendered notebook (.html) and figures
 q3-webtext/     web text mining notebook, rendered notebook and figures
 q4-etl/         ETL notebook, rendered notebook, figures and SQL scripts

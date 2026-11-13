@@ -24,6 +24,8 @@ doc6.txt  keyword=africa  matches=0  locations=not found
 doc7.txt  keyword=africa  matches=0  locations=not found
 ```
 
+`q1_mapreduce_keyword_search.Rmd` (rendered as `.html`) is the notebook for this question. It builds the jar, runs the job in local mode with the keyword as a parameter, checks the result against a search in R and shows the cluster evidence.
+
 `evidence/` holds the logs of the local and cluster runs, the result files and screenshots of the YARN and HDFS web pages.
 
 `hadoop-config/` is a complete single node configuration used through `HADOOP_CONF_DIR`. `yarn-site.xml` raises the disk health threshold to 99% because the development laptop's disk was over 90% full, which otherwise makes YARN mark the node unhealthy.
