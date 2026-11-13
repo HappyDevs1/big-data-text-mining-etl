@@ -26,7 +26,7 @@ Tools used: Java 17, Apache Hadoop 3.5.0 (HDFS and YARN on a single node), Maven
 
 ![Logical layout of the MapReduce keyword location search](figures/q1_mapreduce_logical_layout.png)
 
-The goal is to return the row and column of every occurrence of a keyword in every document. The keyword is not fixed in the code, and matching ignores case. The job runs in six logical stages.
+The goal is to return the row and column of every occurrence of a keyword in every document. The keyword is not fixed in the code, and matching ignores case. In MapReduce the map step turns input records into key value pairs and the reduce step combines all values that share a key (EMC Education Services, 2015, ch. 10). The job runs in six logical stages.
 
 1. **Input.** The seven documents from `map_reduce_test_docs.zip` are copied into HDFS (`/user/<user>/keyword-search/input`). HDFS stores them as blocks spread across DataNodes.
 2. **Input splits and record reading.** Hadoop's default `TextInputFormat` hands the mapper a byte offset, which is not a row number. Rows can only be counted correctly if one reader sees a document from its first line. A custom `LineNumberInputFormat` therefore marks files as not splittable, so each document becomes one split. Its record reader wraps Hadoop's `LineRecordReader` and replaces the byte offset with a running line counter. Every record becomes `(rowNumber, lineText)`. Lines are still streamed one at a time, so memory use stays flat for large documents.
@@ -643,7 +643,7 @@ Cleaning removed roughly half of every article (between 46% and 54% of the words
 
 ## 2.2 LDA topics and word distributions
 
-A document term matrix was built from the cleaned tokens. To choose the number of topics, models with 2 to 8 topics were compared on perplexity. Perplexity always falls as more topics are added, so the elbow of the curve was used: the big gains stop at k = 4.
+A document term matrix was built from the cleaned tokens. LDA treats each document as a mix of topics and each topic as a distribution over words (Blei, Ng and Jordan, 2003; EMC Education Services, 2015, ch. 9). To choose the number of topics, models with 2 to 8 topics were compared on perplexity. Perplexity always falls as more topics are added, so the elbow of the curve was used: the big gains stop at k = 4.
 
 ![Perplexity by number of topics](../q2-lda/figures/choose_k-1.png)
 
@@ -795,7 +795,7 @@ The result is a named list. `meta` holds the URL, title, last edit date, retriev
 
 ## 3.2 Preprocessing
 
-Profiling the raw paragraphs found 266 Wikipedia citation markers such as `[96]`, 53 non ASCII characters (curly quotes, en dashes, degree signs) and one empty paragraph. Cleaning is done in two layers. Sentences stay readable, because extractive summaries reuse real sentences. Words are reduced to lemmas for counting.
+Profiling the raw paragraphs found 266 Wikipedia citation markers such as `[96]`, 53 non ASCII characters (curly quotes, en dashes, degree signs) and one empty paragraph. These steps follow the parsing, filtering and normalising stages of text analysis (EMC Education Services, 2015, ch. 9). Cleaning is done in two layers. Sentences stay readable, because extractive summaries reuse real sentences. Words are reduced to lemmas for counting.
 
 | Step | Technique | Purpose |
 |---|---|---|
@@ -1238,7 +1238,7 @@ glimpse(books_clean)
 
 ## 4.3 Loading into PostgreSQL and analysis
 
-The table is created with a primary key and CHECK constraints (rating 1 to 5, price above 0, stock not negative), which act as a final quality gate. The CSV is imported with `\copy`:
+The table is created with a primary key and CHECK constraints (rating 1 to 5, price above 0, stock not negative), which act as a final quality gate. The two investigations use common table expressions and window functions, which let SQL rank and aggregate inside the database (EMC Education Services, 2015, ch. 11). The CSV is imported with `\copy`:
 
 ```sql
 -- Question 4.3: create the table and import the cleaned CSV
@@ -1397,11 +1397,11 @@ Blei, D.M., Ng, A.Y. and Jordan, M.I. (2003) 'Latent Dirichlet allocation', *Jou
 
 Books to Scrape (2026) *All products*. Available at: https://books.toscrape.com (Accessed: 12 November 2026).
 
+EMC Education Services (2015) *Data science and big data analytics: Discovering, analyzing, visualizing and presenting data*. Indianapolis, IN: John Wiley and Sons.
+
 Erkan, G. and Radev, D.R. (2004) 'LexRank: Graph-based lexical centrality as salience in text summarization', *Journal of Artificial Intelligence Research*, 22, pp. 457-479.
 
 Luhn, H.P. (1958) 'The automatic creation of literature abstracts', *IBM Journal of Research and Development*, 2(2), pp. 159-165.
-
-Matanga, N.Y. (2026) *ITBDA4-14 Project 2 brief*. Eduvos.
 
 Mihalcea, R. and Tarau, P. (2004) 'TextRank: Bringing order into texts', *Proceedings of the 2004 Conference on Empirical Methods in Natural Language Processing*, pp. 404-411.
 
